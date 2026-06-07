@@ -141,7 +141,9 @@ async function createSalesReport() {
       contract_id: parseInt(document.getElementById('sr-contract').value),
       licensee: document.getElementById('sr-licensee').value,
       period: document.getElementById('sr-period').value,
-      sales_amount: parseFloat(document.getElementById('sr-amount').value)
+      sales_amount: parseFloat(document.getElementById('sr-amount').value),
+      remarks: document.getElementById('sr-remarks') ? document.getElementById('sr-remarks').value : null,
+      audit_conclusion: document.getElementById('sr-audit-conclusion') ? document.getElementById('sr-audit-conclusion').value : null
     };
     const result = await api('/api/sales-reports', 'POST', data);
     showMessage(result.is_supplementary ? 'info' : 'success', result.message || '申报提交成功');
@@ -152,7 +154,13 @@ async function createSalesReport() {
 async function generateSettlement(reportId) {
   try {
     const result = await api('/api/settlements/generate/' + reportId, 'POST');
-    showMessage('success', '结算单生成成功，费率: ' + result.applied_rate + '%, 版税额: ' + result.royalty_amount);
+    let msg = '结算单生成成功，费率: ' + result.applied_rate + '%, 版税额: ' + result.royalty_amount;
+    if (result.tier_boundary_hit && result.prompt_message) {
+      msg += ' ⚠️  ' + result.prompt_message;
+      showMessage('warning', msg);
+    } else {
+      showMessage('success', msg);
+    }
     loadSalesReports();
     loadSettlements();
   } catch (e) { showMessage('error', e.message); }

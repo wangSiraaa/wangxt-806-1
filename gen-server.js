@@ -30,8 +30,9 @@ function initDatabase() {
         db.serialize(() => {
           db.run('CREATE TABLE IF NOT EXISTS contracts (id INTEGER PRIMARY KEY AUTOINCREMENT, contract_no TEXT UNIQUE NOT NULL, patent_name TEXT NOT NULL, patent_no TEXT NOT NULL, licensor TEXT NOT NULL, licensee TEXT NOT NULL, effective_date TEXT NOT NULL, end_date TEXT NOT NULL, status TEXT NOT NULL DEFAULT "DRAFT", created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP)');
           db.run('CREATE TABLE IF NOT EXISTS rate_tiers (id INTEGER PRIMARY KEY AUTOINCREMENT, contract_id INTEGER NOT NULL, tier_name TEXT NOT NULL, min_amount REAL NOT NULL DEFAULT 0, max_amount REAL, rate REAL NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP)');
-          db.run('CREATE TABLE IF NOT EXISTS sales_reports (id INTEGER PRIMARY KEY AUTOINCREMENT, report_no TEXT UNIQUE NOT NULL, contract_id INTEGER NOT NULL, licensee TEXT NOT NULL, period TEXT NOT NULL, sales_amount REAL NOT NULL, status TEXT NOT NULL DEFAULT "PENDING", is_supplementary INTEGER DEFAULT 0, original_report_id INTEGER, created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP)');
-          db.run('CREATE TABLE IF NOT EXISTS settlements (id INTEGER PRIMARY KEY AUTOINCREMENT, settlement_no TEXT UNIQUE NOT NULL, report_id INTEGER NOT NULL, contract_id INTEGER NOT NULL, period TEXT NOT NULL, sales_amount REAL NOT NULL, royalty_amount REAL NOT NULL, applied_rate REAL NOT NULL, tier_applied TEXT, is_supplementary INTEGER DEFAULT 0, previous_settlement_id INTEGER, difference_amount REAL DEFAULT 0, status TEXT NOT NULL DEFAULT "DRAFT", created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP)', (err) => {
+          db.run('CREATE TABLE IF NOT EXISTS sales_reports (id INTEGER PRIMARY KEY AUTOINCREMENT, report_no TEXT UNIQUE NOT NULL, contract_id INTEGER NOT NULL, licensee TEXT NOT NULL, period TEXT NOT NULL, sales_amount REAL NOT NULL, status TEXT NOT NULL DEFAULT "PENDING", is_supplementary INTEGER DEFAULT 0, original_report_id INTEGER, remarks TEXT, audit_conclusion TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP)');
+          db.run('CREATE TABLE IF NOT EXISTS settlements (id INTEGER PRIMARY KEY AUTOINCREMENT, settlement_no TEXT UNIQUE NOT NULL, report_id INTEGER NOT NULL, contract_id INTEGER NOT NULL, period TEXT NOT NULL, sales_amount REAL NOT NULL, royalty_amount REAL NOT NULL, applied_rate REAL NOT NULL, tier_applied TEXT, is_supplementary INTEGER DEFAULT 0, previous_settlement_id INTEGER, difference_amount REAL DEFAULT 0, status TEXT NOT NULL DEFAULT "DRAFT", created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP)');
+          db.run('CREATE TABLE IF NOT EXISTS settlement_audit_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, settlement_id INTEGER NOT NULL, report_id INTEGER NOT NULL, contract_id INTEGER NOT NULL, sales_amount REAL NOT NULL, tier_boundary_hit INTEGER DEFAULT 0, previous_tier TEXT, applied_tier TEXT, previous_rate REAL, applied_rate REAL, previous_royalty REAL, calculated_royalty REAL, recalculation_triggered INTEGER DEFAULT 0, prompt_message TEXT, audit_details TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)', (err) => {
             if (err) reject(err);
             else resolve();
           });
@@ -49,8 +50,8 @@ function generateNo(prefix) {
   return prefix + year + month + random;
 }
 
-function calculateRoyalty(salesAmount, tiers) {
-  if (!tiers || tiers.length === 0) return { royaltyAmount: 0, appliedRate: 0, tierApplied: null };
+function findApplicableTier(salesAmount, tiers) {
+  if (!tiers || tiers.length === 0) return null;
   let applicableTier = null;
   for (let i = tiers.length - 1; i >= 0; i--) {
     const tier = tiers[i];
@@ -62,8 +63,45 @@ function calculateRoyalty(salesAmount, tiers) {
     }
   }
   if (!applicableTier) applicableTier = tiers[0];
+  return applicableTier;
+}
+
+function calculateRoyalty(salesAmount, tiers) {
+  if (!tiers || tiers.length === 0) return { royaltyAmount: 0, appliedRate: 0, tierApplied: null };
+  const applicableTier = findApplicableTier(salesAmount, tiers);
   const royaltyAmount = Math.round(salesAmount * (applicableTier.rate / 100) * 100) / 100;
   return { royaltyAmount, appliedRate: applicableTier.rate, tierApplied: applicableTier.tier_name };
+}
+
+function checkTierBoundary(salesAmount, tiers) {
+  const boundaryThreshold = 0.01;
+  let hitBoundary = false;
+  let boundaryTier = null;
+  let nextTier = null;
+  let promptMessage = null;
+  for (let i = 0; i < tiers.length; i++) {
+    const tier = tiers[i];
+    if (tier.max_amount !== null) {
+      const diff = Math.abs(salesAmount - tier.max_amount);
+      if (diff <= tier.max_amount * boundaryThreshold) {
+        hitBoundary = true;
+        boundaryTier = tier;
+        nextTier = tiers[i + 1] || null;
+        promptMessage = '销售额 ' + salesAmount + ' 接近阶梯边界 ' + tier.max_amount + '，请注意：如销售额达到 ' + tier.max_amount + ' 以上，费率将从 ' + tier.rate + '% 调整为 ' + (nextTier ? nextTier.rate + '%' : '下一档位费率') + '，需重新计算版税';
+        break;
+      }
+    }
+    const diffMin = Math.abs(salesAmount - tier.min_amount);
+    if (tier.min_amount > 0 && diffMin <= tier.min_amount * boundaryThreshold) {
+      hitBoundary = true;
+      boundaryTier = tier;
+      nextTier = tier;
+      const prevTier = tiers[i - 1] || null;
+      promptMessage = '销售额 ' + salesAmount + ' 接近阶梯起点 ' + tier.min_amount + '，请注意：当前档位 ' + tier.tier_name + ' 费率为 ' + tier.rate + '%，如低于 ' + tier.min_amount + ' 将适用 ' + (prevTier ? prevTier.tier_name + '(' + prevTier.rate + '%)' : '上一档位费率');
+      break;
+    }
+  }
+  return { hitBoundary, boundaryTier, nextTier, promptMessage };
 }
 
 app.use(cors());
@@ -149,16 +187,6 @@ app.post('/api/rate-tiers', (req, res) => {
     });
 });
 
-app.put('/api/rate-tiers/:id', (req, res) => {
-  const { tier_name, min_amount, max_amount, rate } = req.body;
-  db.run('UPDATE rate_tiers SET tier_name = ?, min_amount = ?, max_amount = ?, rate = ? WHERE id = ?',
-    [tier_name, min_amount, max_amount, rate, req.params.id],
-    function(err) {
-      if (err) res.status(500).json({ error: err.message });
-      else res.json({ message: 'Updated' });
-    });
-});
-
 app.delete('/api/rate-tiers/:id', (req, res) => {
   db.run('DELETE FROM rate_tiers WHERE id = ?', [req.params.id], function(err) {
     if (err) res.status(500).json({ error: err.message });
@@ -174,7 +202,7 @@ app.get('/api/sales-reports', (req, res) => {
 });
 
 app.post('/api/sales-reports', (req, res) => {
-  const { contract_id, licensee, period, sales_amount } = req.body;
+  const { contract_id, licensee, period, sales_amount, remarks, audit_conclusion } = req.body;
   const report_no = generateNo('SR');
   
   db.get('SELECT * FROM contracts WHERE id = ?', [contract_id], (err, contract) => {
@@ -203,8 +231,8 @@ app.post('/api/sales-reports', (req, res) => {
       }
       
       function insertReport() {
-        db.run('INSERT INTO sales_reports (report_no, contract_id, licensee, period, sales_amount, status, is_supplementary, original_report_id) VALUES (?, ?, ?, ?, ?, "PENDING", ?, ?)',
-          [report_no, contract_id, licensee, period, sales_amount, is_supplementary, original_report_id],
+        db.run('INSERT INTO sales_reports (report_no, contract_id, licensee, period, sales_amount, status, is_supplementary, original_report_id, remarks, audit_conclusion) VALUES (?, ?, ?, ?, ?, "PENDING", ?, ?, ?, ?)',
+          [report_no, contract_id, licensee, period, sales_amount, is_supplementary, original_report_id, remarks || null, audit_conclusion || null],
           function(err) {
             if (err) return res.status(500).json({ error: err.message });
             res.status(201).json({ id: this.lastID, report_no, is_supplementary, message });
@@ -214,8 +242,26 @@ app.post('/api/sales-reports', (req, res) => {
   });
 });
 
+app.put('/api/sales-reports/:id/audit', (req, res) => {
+  const { audit_conclusion } = req.body;
+  db.run('UPDATE sales_reports SET audit_conclusion = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+    [audit_conclusion, req.params.id],
+    function(err) {
+      if (err) res.status(500).json({ error: err.message });
+      else if (this.changes === 0) res.status(404).json({ error: 'Not found' });
+      else res.json({ message: 'Audit conclusion updated' });
+    });
+});
+
 app.get('/api/settlements', (req, res) => {
-  db.all('SELECT s.*, c.contract_no, c.patent_name, sr.report_no, sr.licensee FROM settlements s LEFT JOIN contracts c ON s.contract_id = c.id LEFT JOIN sales_reports sr ON s.report_id = sr.id ORDER BY s.created_at DESC', [], (err, rows) => {
+  db.all('SELECT s.*, c.contract_no, c.patent_name, sr.report_no, sr.licensee, sr.remarks as report_remarks, sr.audit_conclusion FROM settlements s LEFT JOIN contracts c ON s.contract_id = c.id LEFT JOIN sales_reports sr ON s.report_id = sr.id ORDER BY s.created_at DESC', [], (err, rows) => {
+    if (err) res.status(500).json({ error: err.message });
+    else res.json(rows);
+  });
+});
+
+app.get('/api/settlements/:id/audit-logs', (req, res) => {
+  db.all('SELECT * FROM settlement_audit_logs WHERE settlement_id = ? ORDER BY created_at DESC', [req.params.id], (err, rows) => {
     if (err) res.status(500).json({ error: err.message });
     else res.json(rows);
   });
@@ -232,7 +278,19 @@ app.post('/api/settlements/generate/:reportId', (req, res) => {
     db.all('SELECT * FROM rate_tiers WHERE contract_id = ? ORDER BY min_amount ASC', [report.contract_id], (err, tiers) => {
       if (err) return res.status(500).json({ error: err.message });
       
+      const boundaryCheck = checkTierBoundary(report.sales_amount, tiers);
       const result = calculateRoyalty(report.sales_amount, tiers);
+      
+      let previousTier = null;
+      let previousRate = null;
+      let previousRoyalty = null;
+      
+      if (boundaryCheck.hitBoundary && boundaryCheck.boundaryTier) {
+        previousTier = boundaryCheck.boundaryTier;
+        previousRate = boundaryCheck.boundaryTier.rate;
+        previousRoyalty = Math.round(report.sales_amount * (previousRate / 100) * 100) / 100;
+      }
+      
       let is_supplementary = 0;
       let previous_settlement_id = null;
       let difference_amount = 0;
@@ -255,15 +313,43 @@ app.post('/api/settlements/generate/:reportId', (req, res) => {
           [settlement_no, report.id, report.contract_id, report.period, report.sales_amount, result.royaltyAmount, result.appliedRate, result.tierApplied, is_supplementary, previous_settlement_id, difference_amount],
           function(err) {
             if (err) return res.status(500).json({ error: err.message });
+            const settlementId = this.lastID;
+            
+            const auditDetails = JSON.stringify({
+              tiers: tiers,
+              salesAmount: report.sales_amount,
+              boundaryCheck: boundaryCheck,
+              calculation: result,
+              timestamp: new Date().toISOString()
+            });
+            
+            db.run('INSERT INTO settlement_audit_logs (settlement_id, report_id, contract_id, sales_amount, tier_boundary_hit, previous_tier, applied_tier, previous_rate, applied_rate, previous_royalty, calculated_royalty, recalculation_triggered, prompt_message, audit_details) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+              [settlementId, report.id, report.contract_id, report.sales_amount,
+               boundaryCheck.hitBoundary ? 1 : 0,
+               previousTier ? previousTier.tier_name : null,
+               result.tierApplied,
+               previousRate,
+               result.appliedRate,
+               previousRoyalty,
+               result.royaltyAmount,
+               boundaryCheck.hitBoundary ? 1 : 0,
+               boundaryCheck.promptMessage,
+               auditDetails],
+              function(auditErr) {
+                if (auditErr) console.error('Failed to insert audit log:', auditErr);
+              });
+            
             db.run('UPDATE sales_reports SET status = "SETTLED", updated_at = CURRENT_TIMESTAMP WHERE id = ?', [reportId]);
             res.status(201).json({
-              id: this.lastID, settlement_no,
+              id: settlementId, settlement_no,
               sales_amount: report.sales_amount,
               royalty_amount: result.royaltyAmount,
               applied_rate: result.appliedRate,
               tier_applied: result.tierApplied,
               is_supplementary,
-              difference_amount
+              difference_amount,
+              tier_boundary_hit: boundaryCheck.hitBoundary,
+              prompt_message: boundaryCheck.promptMessage
             });
           });
       }
@@ -271,13 +357,70 @@ app.post('/api/settlements/generate/:reportId', (req, res) => {
   });
 });
 
-app.put('/api/settlements/:id/status', (req, res) => {
-  const { status } = req.body;
-  db.run('UPDATE settlements SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [status, req.params.id],
-    function(err) {
-      if (err) res.status(500).json({ error: err.message });
-      else res.json({ message: 'Updated' });
+app.get('/api/reports/export', (req, res) => {
+  const { type = 'settlements', format = 'csv' } = req.query;
+  
+  if (type === 'settlements') {
+    const query = "SELECT s.settlement_no as 结算单号, c.contract_no as 合同编号, c.patent_name as 专利名称, c.licensor as 专利权人, c.licensee as 被许可方, sr.report_no as 申报编号, s.period as 期间, s.sales_amount as 销售额, s.applied_rate as 适用费率, s.tier_applied as 适用档位, s.royalty_amount as 版税额, CASE WHEN s.is_supplementary = 1 THEN '是' ELSE '否' END as 是否补差, s.difference_amount as 差额, s.status as 状态, sr.remarks as 申报说明, sr.audit_conclusion as 审核结论, s.created_at as 创建时间 FROM settlements s LEFT JOIN contracts c ON s.contract_id = c.id LEFT JOIN sales_reports sr ON s.report_id = sr.id ORDER BY s.created_at DESC";
+    db.all(query, [], (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      if (format === 'csv') {
+        if (rows.length === 0) {
+          res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+          res.setHeader('Content-Disposition', 'attachment; filename="settlements_report.csv"');
+          return res.send('');
+        }
+        const headers = Object.keys(rows[0]).join(',');
+        const csvRows = rows.map(row => 
+          Object.values(row).map(v => {
+            if (v === null || v === undefined) return '';
+            const str = String(v);
+            if (str.includes(',') || str.includes('"') || str.includes('\\n')) {
+              return '"' + str.replace(/"/g, '""') + '"';
+            }
+            return str;
+          }).join(',')
+        );
+        const csvContent = '\\uFEFF' + headers + '\\n' + csvRows.join('\\n');
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', 'attachment; filename="settlements_report.csv"');
+        res.send(csvContent);
+      } else {
+        res.json(rows);
+      }
     });
+  } else if (type === 'sales') {
+    const query = "SELECT sr.report_no as 申报编号, c.contract_no as 合同编号, c.patent_name as 专利名称, sr.licensee as 被许可方, sr.period as 期间, sr.sales_amount as 销售额, CASE WHEN sr.is_supplementary = 1 THEN '是' ELSE '否' END as 是否补差, sr.status as 状态, sr.remarks as 申报说明, sr.audit_conclusion as 审核结论, sr.created_at as 创建时间 FROM sales_reports sr LEFT JOIN contracts c ON sr.contract_id = c.id ORDER BY sr.created_at DESC";
+    db.all(query, [], (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      if (format === 'csv') {
+        if (rows.length === 0) {
+          res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+          res.setHeader('Content-Disposition', 'attachment; filename="sales_reports.csv"');
+          return res.send('');
+        }
+        const headers = Object.keys(rows[0]).join(',');
+        const csvRows = rows.map(row => 
+          Object.values(row).map(v => {
+            if (v === null || v === undefined) return '';
+            const str = String(v);
+            if (str.includes(',') || str.includes('"') || str.includes('\\n')) {
+              return '"' + str.replace(/"/g, '""') + '"';
+            }
+            return str;
+          }).join(',')
+        );
+        const csvContent = '\\uFEFF' + headers + '\\n' + csvRows.join('\\n');
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', 'attachment; filename="sales_reports.csv"');
+        res.send(csvContent);
+      } else {
+        res.json(rows);
+      }
+    });
+  } else {
+    res.status(400).json({ error: 'Invalid report type' });
+  }
 });
 
 async function start() {

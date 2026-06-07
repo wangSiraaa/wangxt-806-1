@@ -1,0 +1,59 @@
+{
+  "contracts": [
+    {
+      "patent_name": "智能数据处理算法",
+      "patent_no": "CN202310123456.7",
+      "licensor": "创新科技有限公司",
+      "licensee": "未来科技发展有限公司",
+      "effective_date": "2024-01-01",
+      "end_date": "2026-12-31",
+      "status": "ACTIVE",
+      "rate_tiers": [
+        { "tier_name": "阶梯1", "min_amount": 0, "max_amount": 100000, "rate": 3 },
+        { "tier_name": "阶梯2", "min_amount": 100000, "max_amount": 500000, "rate": 5 },
+        { "tier_name": "阶梯3", "min_amount": 500000, "max_amount": 1000000, "rate": 7 },
+        { "tier_name": "阶梯4", "min_amount": 1000000, "max_amount": null, "rate": 10 }
+      ],
+      "sales_reports": [
+        {
+          "period": "2024-01",
+          "sales_amount": 85000,
+          "remarks": "1月份常规销售数据，经核对无误",
+          "audit_conclusion": "审核通过，数据准确"
+        },
+        {
+          "period": "2024-02",
+          "sales_amount": 105000,
+          "remarks": "2月份销售额达到第二阶梯，触发费率调整提示",
+          "audit_conclusion": "审核通过，已触发阶梯费率重算提示"
+        },
+        {
+          "period": "2024-03",
+          "sales_amount": 498000,
+          "remarks": "3月份接近第三阶梯边界，请注意后续月份可能触发费率调整",
+          "audit_conclusion": "审核通过，已标记接近阶梯边界"
+        }
+      ]
+    },
+    {
+      "patent_name": "区块链存证系统",
+      "patent_no": "CN202310789012.3",
+      "licensor": "创新科技有限公司",
+      "licensee": "数字金融服务有限公司",
+      "effective_date": "2024-01-01",
+      "end_date": "2025-12-31",
+      "status": "ACTIVE",
+      "rate_tiers": [
+        { "tier_name": "标准档", "min_amount": 0, "max_amount": null, "rate": 4 }
+      ],
+      "sales_reports": [
+        {
+          "period": "2024-01",
+          "sales_amount": 150000,
+          "remarks": "区块链存证业务首月运营数据",
+          "audit_conclusion": "审核通过"
+        }
+      ]
+    }
+  ]
+}

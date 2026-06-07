@@ -36,6 +36,8 @@ CREATE TABLE IF NOT EXISTS sales_reports (
   status TEXT NOT NULL DEFAULT 'PENDING',
   is_supplementary INTEGER DEFAULT 0,
   original_report_id INTEGER,
+  remarks TEXT,
+  audit_conclusion TEXT,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (contract_id) REFERENCES contracts(id),
@@ -62,4 +64,27 @@ CREATE TABLE IF NOT EXISTS settlements (
   FOREIGN KEY (report_id) REFERENCES sales_reports(id),
   FOREIGN KEY (contract_id) REFERENCES contracts(id),
   FOREIGN KEY (previous_settlement_id) REFERENCES settlements(id)
+);
+
+-- 结算审核日志表（用于复现阶梯费率重算过程）
+CREATE TABLE IF NOT EXISTS settlement_audit_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  settlement_id INTEGER NOT NULL,
+  report_id INTEGER NOT NULL,
+  contract_id INTEGER NOT NULL,
+  sales_amount REAL NOT NULL,
+  tier_boundary_hit INTEGER DEFAULT 0,
+  previous_tier TEXT,
+  applied_tier TEXT,
+  previous_rate REAL,
+  applied_rate REAL,
+  previous_royalty REAL,
+  calculated_royalty REAL,
+  recalculation_triggered INTEGER DEFAULT 0,
+  prompt_message TEXT,
+  audit_details TEXT,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (settlement_id) REFERENCES settlements(id),
+  FOREIGN KEY (report_id) REFERENCES sales_reports(id),
+  FOREIGN KEY (contract_id) REFERENCES contracts(id)
 );
