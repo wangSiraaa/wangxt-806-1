@@ -1,4 +1,5 @@
-<!DOCTYPE html>
+const fs = require('fs');
+const html = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -99,4 +100,6 @@
 </div>
 <script src="js/app.js"></script>
 </body>
-</html>
+</html>`;
+fs.writeFileSync('public/index.html', html);
+console.log('HTML written successfully');

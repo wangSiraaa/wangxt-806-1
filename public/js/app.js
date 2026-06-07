@@ -7,7 +7,61 @@ document.querySelectorAll('.tab').forEach(tab => {
     tab.classList.add('active');
     document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
     currentTab = tab.dataset.tab;
-    if (currentTab === 'contracts') loadContracts();
+    if (currentTab === 'contracts') 
+async function loadContractsForRateTierSelect() {
+  const contracts = await api("/api/contracts");
+  const select = document.getElementById("rt-contract");
+  const currentValue = select.value;
+  select.innerHTML = "<option value=\"\">请选择合同</option>" + contracts.map(x => "<option value=\"" + x.id + "\">" + x.contract_no + " - " + x.patent_name + "</option>").join("");
+  if (currentValue) select.value = currentValue;
+}
+
+async function loadRateTiers() {
+  const contractId = document.getElementById("rt-contract").value;
+  const noContractHint = document.getElementById("rt-no-contract");
+  const table = document.getElementById("ratetiers-table");
+  if (!contractId) { noContractHint.style.display = "block"; table.style.display = "none"; return; }
+  noContractHint.style.display = "none"; table.style.display = "table";
+  const tiers = await api("/api/rate-tiers/contract/" + contractId);
+  const tbody = document.getElementById("ratetiers-tbody");
+  if (tiers.length === 0) { tbody.innerHTML = "<tr><td colspan=\"5\" style=\"text-align:center;color:#999;padding:20px;\">暂无费率档，请添加</td></tr>"; return; }
+  tbody.innerHTML = tiers.map(t => {
+    const range = t.max_amount ? t.min_amount + " - " + t.max_amount : t.min_amount + " 以上";
+    const example = t.max_amount ? Math.round(t.max_amount * 0.6 * (t.rate / 100) * 100) / 100 : Math.round(100000 * (t.rate / 100) * 100) / 100;
+    return "<tr><td>" + t.tier_name + "</td><td>" + range + "</td><td><span class=\"rate-badge\">" + t.rate + "%</span></td><td>¥" + example + "</td><td><button class=\"btn btn-danger btn-sm\" onclick=\"deleteRateTier(" + t.id + ")\">删除</button></td></tr>";
+  }).join("");
+}
+
+async function createRateTier() {
+  try {
+    const contractId = document.getElementById("rt-contract").value;
+    if (!contractId) throw new Error("请先选择合同");
+    const tierName = document.getElementById("rt-tier-name").value;
+    const minAmount = parseFloat(document.getElementById("rt-min-amount").value);
+    const maxAmountStr = document.getElementById("rt-max-amount").value;
+    const rate = parseFloat(document.getElementById("rt-rate").value);
+    if (!tierName) throw new Error("请输入档位名称");
+    if (isNaN(minAmount)) throw new Error("请输入最低销售额");
+    if (isNaN(rate)) throw new Error("请输入费率");
+    const data = { contract_id: parseInt(contractId), tier_name: tierName, min_amount: minAmount, max_amount: maxAmountStr ? parseFloat(maxAmountStr) : null, rate: rate };
+    await api("/api/rate-tiers", "POST", data);
+    showMessage("success", "费率档添加成功");
+    document.getElementById("rt-tier-name").value = "";
+    document.getElementById("rt-min-amount").value = "";
+    document.getElementById("rt-max-amount").value = "";
+    document.getElementById("rt-rate").value = "";
+    loadRateTiers();
+  } catch (e) { showMessage("error", e.message); }
+}
+
+async function deleteRateTier(id) {
+  if (!confirm("确认删除该费率档？")) return;
+  await api("/api/rate-tiers/" + id, "DELETE");
+  showMessage("success", "已删除");
+  loadRateTiers();
+}
+loadContracts();
+    if (currentTab === 'ratetiers') { loadContractsForRateTierSelect(); loadRateTiers(); }
     if (currentTab === 'sales') { loadContractsForSelect(); loadSalesReports(); }
     if (currentTab === 'settlements') loadSettlements();
   });

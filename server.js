@@ -6,6 +6,7 @@ const { initDatabase, getDatabase } = require("./db/database");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
 let db;
 
 function generateNo(prefix) {
@@ -57,16 +58,27 @@ app.get("/api/contracts/:id", (req, res) => {
 app.post("/api/contracts", (req, res) => {
   const { patent_name, patent_no, licensor, licensee, effective_date, end_date } = req.body;
   const contract_no = generateNo("CT");
-  db.run("INSERT INTO contracts (contract_no, patent_name, patent_no, licensor, licensee, effective_date, end_date, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-    [contract_no, patent_name, patent_no, licensor, licensee, effective_date, end_date, "DRAFT"],
+  db.run("INSERT INTO contracts (contract_no, patent_name, patent_no, licensor, licensee, effective_date, end_date, status) VALUES (?, ?, ?, ?, ?, ?, ?, \"DRAFT\")",
+    [contract_no, patent_name, patent_no, licensor, licensee, effective_date, end_date],
     function(err) {
       if (err) res.status(500).json({ error: err.message });
       else res.status(201).json({ id: this.lastID, contract_no });
     });
 });
 
+app.put("/api/contracts/:id", (req, res) => {
+  const { patent_name, patent_no, licensor, licensee, effective_date, end_date } = req.body;
+  db.run("UPDATE contracts SET patent_name = ?, patent_no = ?, licensor = ?, licensee = ?, effective_date = ?, end_date = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+    [patent_name, patent_no, licensor, licensee, effective_date, end_date, req.params.id],
+    function(err) {
+      if (err) res.status(500).json({ error: err.message });
+      else if (this.changes === 0) res.status(404).json({ error: "Not found" });
+      else res.json({ message: "Updated" });
+    });
+});
+
 app.post("/api/contracts/:id/activate", (req, res) => {
-  db.run("UPDATE contracts SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", ["ACTIVE", req.params.id],
+  db.run("UPDATE contracts SET status = \"ACTIVE\", updated_at = CURRENT_TIMESTAMP WHERE id = ?", [req.params.id],
     function(err) {
       if (err) res.status(500).json({ error: err.message });
       else res.json({ message: "Activated" });
@@ -74,7 +86,7 @@ app.post("/api/contracts/:id/activate", (req, res) => {
 });
 
 app.post("/api/contracts/:id/deactivate", (req, res) => {
-  db.run("UPDATE contracts SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", ["INACTIVE", req.params.id],
+  db.run("UPDATE contracts SET status = \"INACTIVE\", updated_at = CURRENT_TIMESTAMP WHERE id = ?", [req.params.id],
     function(err) {
       if (err) res.status(500).json({ error: err.message });
       else res.json({ message: "Deactivated" });
@@ -144,8 +156,8 @@ app.post("/api/sales-reports", (req, res) => {
         insertReport();
       }
       function insertReport() {
-        db.run("INSERT INTO sales_reports (report_no, contract_id, licensee, period, sales_amount, status, is_supplementary, original_report_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-          [report_no, contract_id, licensee, period, sales_amount, "PENDING", is_supplementary, original_report_id],
+        db.run("INSERT INTO sales_reports (report_no, contract_id, licensee, period, sales_amount, status, is_supplementary, original_report_id) VALUES (?, ?, ?, ?, ?, \"PENDING\", ?, ?)",
+          [report_no, contract_id, licensee, period, sales_amount, is_supplementary, original_report_id],
           function(err) {
             if (err) return res.status(500).json({ error: err.message });
             res.status(201).json({ id: this.lastID, report_no, is_supplementary, message });
@@ -187,12 +199,20 @@ app.post("/api/settlements/generate/:reportId", (req, res) => {
         insertSettlement();
       }
       function insertSettlement() {
-        db.run("INSERT INTO settlements (settlement_no, report_id, contract_id, period, sales_amount, royalty_amount, applied_rate, tier_applied, is_supplementary, previous_settlement_id, difference_amount, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-          [settlement_no, report.id, report.contract_id, report.period, report.sales_amount, result.royaltyAmount, result.appliedRate, result.tierApplied, is_supplementary, previous_settlement_id, difference_amount, "DRAFT"],
+        db.run("INSERT INTO settlements (settlement_no, report_id, contract_id, period, sales_amount, royalty_amount, applied_rate, tier_applied, is_supplementary, previous_settlement_id, difference_amount, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, \"DRAFT\")",
+          [settlement_no, report.id, report.contract_id, report.period, report.sales_amount, result.royaltyAmount, result.appliedRate, result.tierApplied, is_supplementary, previous_settlement_id, difference_amount],
           function(err) {
             if (err) return res.status(500).json({ error: err.message });
-            db.run("UPDATE sales_reports SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", ["SETTLED", reportId]);
-            res.status(201).json({ id: this.lastID, settlement_no, sales_amount: report.sales_amount, royalty_amount: result.royaltyAmount, applied_rate: result.appliedRate, tier_applied: result.tierApplied, is_supplementary, difference_amount });
+            db.run("UPDATE sales_reports SET status = \"SETTLED\", updated_at = CURRENT_TIMESTAMP WHERE id = ?", [reportId]);
+            res.status(201).json({
+              id: this.lastID, settlement_no,
+              sales_amount: report.sales_amount,
+              royalty_amount: result.royaltyAmount,
+              applied_rate: result.appliedRate,
+              tier_applied: result.tierApplied,
+              is_supplementary,
+              difference_amount
+            });
           });
       }
     });
