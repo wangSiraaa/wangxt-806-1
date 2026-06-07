@@ -1,0 +1,36 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f7fa; color: #333; }
+.header { background: #1890ff; color: white; padding: 16px 24px; font-size: 20px; font-weight: 600; }
+.container { max-width: 1200px; margin: 24px auto; padding: 0 24px; }
+.tabs { display: flex; gap: 8px; margin-bottom: 24px; border-bottom: 2px solid #e8e8e8; }
+.tab { padding: 12px 24px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; font-weight: 500; }
+.tab.active { color: #1890ff; border-bottom-color: #1890ff; }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+.card { background: white; border-radius: 8px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 16px; }
+.card h2 { font-size: 18px; margin-bottom: 16px; color: #262626; }
+.form-row { display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+.form-group { flex: 1; min-width: 200px; }
+.form-group label { display: block; margin-bottom: 6px; font-size: 14px; color: #595959; }
+.form-group input, .form-group select { width: 100%; padding: 8px 12px; border: 1px solid #d9d9d9; border-radius: 4px; font-size: 14px; }
+.btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: 500; }
+.btn-primary { background: #1890ff; color: white; }
+.btn-success { background: #52c41a; color: white; }
+.btn-danger { background: #ff4d4f; color: white; }
+.btn-default { background: white; border: 1px solid #d9d9d9; color: #595959; }
+.btn-sm { padding: 4px 12px; font-size: 12px; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 12px; text-align: left; border-bottom: 1px solid #f0f0f0; font-size: 14px; }
+th { background: #fafafa; font-weight: 600; color: #595959; }
+tr:hover { background: #fafafa; }
+.status { padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 500; }
+.status-DRAFT { background: #e6f7ff; color: #1890ff; }
+.status-ACTIVE { background: #f6ffed; color: #52c41a; }
+.status-INACTIVE { background: #fff1f0; color: #ff4d4f; }
+.status-PENDING { background: #fff7e6; color: #fa8c16; }
+.status-SETTLED { background: #f6ffed; color: #52c41a; }
+.badge-supp { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; background: #fff0f6; color: #eb2f96; }
+.message { padding: 12px 16px; border-radius: 4px; margin-bottom: 16px; }
+.message-success { background: #f6ffed; border: 1px solid #b7eb8f; color: #52c41a; }
+.message-error { background: #fff1f0; border: 1px solid #ffa39e; color: #ff4d4f; }
+.message-info { background: #e6f7ff; border: 1px solid #91d5ff; color: #1890ff; }
